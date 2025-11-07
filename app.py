@@ -9,7 +9,7 @@ import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 
 # --- CONFIGURATION ---
-# These are loaded from environment variables on Render
+# These are loaded from environment variables n Render
 TONNEL_AUTH_DATA = os.environ.get('TONNEL_AUTH_DATA')
 PORTALS_AUTH_DATA = os.environ.get('PORTALS_AUTH_DATA')
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
