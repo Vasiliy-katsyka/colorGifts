@@ -42,27 +42,67 @@ CACHED_DATA = {
 def load_initial_data():
     logger.info("Loading initial data...")
     try:
+        # 1. & 2. Load Collections and Backdrops (Unchanged)
         collections_url = "https://cdn.changes.tg/gifts/id-to-name.json"
         collections_res = requests.get(collections_url).json()
         CACHED_DATA["collections"] = [{"id": k, "name": v} for k, v in collections_res.items()]
         logger.info(f"Loaded {len(CACHED_DATA['collections'])} collections.")
+
         backdrops_url = "https://cdn.changes.tg/gifts/backdrops.json"
         CACHED_DATA["backdrops"] = requests.get(backdrops_url).json()
         logger.info(f"Loaded {len(CACHED_DATA['backdrops'])} backdrops.")
+
+        # 3. Load Color Data for models (HANDLES BOTH FORMATS)
+        logger.info("Loading color model map from GitHub...")
         color_repo_api = "https://api.github.com/repos/Vasiliy-katsyka/colorGifts/contents/"
-        files = requests.get(color_repo_api).json()
-        for file in files:
-            if file['name'].endswith('.json'):
-                gift_name = file['name'].replace('.json', '')
-                content_url = file['download_url']
-                models_data = requests.get(content_url).json()
-                for model_name, data in models_data.items():
-                    main_color = data.get("main_color", "unknown")
-                    if main_color not in CACHED_DATA["color_model_map"]:
-                        CACHED_DATA["color_model_map"][main_color] = []
-                    CACHED_DATA["color_model_map"][main_color].append((gift_name, model_name))
+        files_res = requests.get(color_repo_api)
+        files_res.raise_for_status()
+        files = files_res.json()
+        
+        for file_info in files:
+            if isinstance(file_info, dict) and file_info.get('name', '').endswith('.json'):
+                gift_name = file_info['name'].replace('.json', '')
+                content_url = file_info['download_url']
+                
+                try:
+                    models_res = requests.get(content_url)
+                    models_res.raise_for_status()
+                    models_data = models_res.json()
+
+                    # --- ADAPTIVE LOGIC IS HERE ---
+                    for model_name, model_data in models_data.items():
+                        main_color = "unknown" # Default color
+
+                        # Check if model_data is a dictionary (Old "Detailed" Format)
+                        if isinstance(model_data, dict):
+                            main_color = model_data.get("main_color", "unknown")
+                        
+                        # Check if model_data is a string (New "Simple" Format)
+                        elif isinstance(model_data, str):
+                            main_color = model_data
+                        
+                        # Log a warning if the format is unexpected
+                        else:
+                            logger.warning(f"Skipping model '{model_name}' in '{gift_name}.json'. Unexpected data format: {type(model_data)}")
+                            continue
+
+                        # Add the model and color to our map
+                        if main_color not in CACHED_DATA["color_model_map"]:
+                            CACHED_DATA["color_model_map"][main_color] = []
+                        CACHED_DATA["color_model_map"][main_color].append((gift_name, model_name))
+
+                except requests.exceptions.JSONDecodeError:
+                    logger.error(f"Failed to decode JSON from {content_url}. Skipping file '{file_info['name']}'.")
+                except requests.exceptions.RequestException as e:
+                    logger.error(f"Failed to download {content_url}: {e}. Skipping file '{file_info['name']}'.")
+
         logger.info("Finished loading color model map.")
-    except Exception as e: logger.error(f"Error loading initial data: {e}", exc_info=True)
+        # Optional: Log a summary of loaded colors
+        for color, models in CACHED_DATA["color_model_map"].items():
+            logger.info(f"Loaded {len(models)} models for color: {color}")
+
+    except Exception as e:
+        logger.error(f"An unexpected error occurred during initial data load: {e}", exc_info=True)
 def format_tonnel_gift(gift):
     gift_name_formatted = gift.get('name', '').lower().replace(' ', '')
     return { "id": f"tonnel_{gift.get('gift_id')}", "name": gift.get('name'), "model": gift.get('model', '').split(' (')[0], "price": gift.get('price', 0) * 1.1, "imageUrl": f"https://nft.fragment.com/gift/{gift_name_formatted}-{gift.get('gift_num')}.large.jpg", "buyUrl": f"https://market.tonnel.network/gift/{gift.get('gift_id')}", "source": "tonnel" }
