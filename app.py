@@ -138,7 +138,6 @@ def search_gifts():
 
     logger.info(f"Found {len(models_for_color)} potential models for color '{color}'.")
 
-    # Filter models by selected collections if any
     if collections:
         initial_model_count = len(models_for_color)
         models_for_color = [m for m in models_for_color if m[0] in collections]
@@ -150,33 +149,24 @@ def search_gifts():
 
     all_gifts = []
 
-    # --- Fetch from Portals ---
+    # --- Fetch from Portals (No change needed, already has error handling) ---
     try:
         gift_names_to_search = list(set([m[0] for m in models_for_color]))
         model_names_to_search = list(set([m[1] for m in models_for_color]))
-        
         logger.info(f"Searching Portals with {len(gift_names_to_search)} collections and {len(model_names_to_search)} models.")
-        
-        portals_results = searchPortalsGifts(
-            authData=PORTALS_AUTH_DATA,
-            gift_name=gift_names_to_search,
-            model=model_names_to_search,
-            backdrop=backdrops if backdrops else "",
-            limit=50
-        )
-        
+        portals_results = searchPortalsGifts(authData=PORTALS_AUTH_DATA, gift_name=gift_names_to_search, model=model_names_to_search, backdrop=backdrops if backdrops else "", limit=50)
         logger.info(f"Portals API returned {len(portals_results)} raw results.")
-        
-        # This part remains the same, formatting the valid results
         for gift in portals_results:
-            model_attr = next((attr for attr in gift.get('attributes', []) if attr['type'] == 'model'), None)
-            if model_attr and (gift['name'], model_attr['value']) in models_for_color:
-                all_gifts.append(format_portals_gift(gift))
-
+            if isinstance(gift, dict): # Add safety check here too, just in case
+                model_attr = next((attr for attr in gift.get('attributes', []) if attr['type'] == 'model'), None)
+                if model_attr and (gift.get('name'), model_attr.get('value')) in models_for_color:
+                    all_gifts.append(format_portals_gift(gift))
+            else:
+                logger.warning(f"Portals API returned a non-dictionary item: {gift}")
     except Exception as e:
         logger.error(f"Error fetching from Portals: {e}", exc_info=True)
 
-    # --- Fetch from Tonnel ---
+    # --- Fetch from Tonnel (FIX IS HERE) ---
     try:
         collections_to_search = collections if collections else list(set([m[0] for m in models_for_color]))
         logger.info(f"Searching Tonnel with {len(collections_to_search)} collections.")
@@ -185,16 +175,16 @@ def search_gifts():
             models_in_collection = [m[1] for m in models_for_color if m[0] == collection_name]
             if not models_in_collection: continue
             
-            # Tonnel API might not support list of models, so we fetch and filter
-            tonnel_results = getTonnelGifts(
-                authData=TONNEL_AUTH_DATA,
-                gift_name=collection_name,
-                backdrop=backdrops[0] if len(backdrops) == 1 else '',
-                limit=30
-            )
+            tonnel_results = getGifts(authData=TONNEL_AUTH_DATA, gift_name=collection_name, backdrop=backdrops[0] if len(backdrops) == 1 else '', limit=30)
             logger.info(f"Tonnel API returned {len(tonnel_results)} raw results for collection '{collection_name}'.")
             
             for gift in tonnel_results:
+                # --- FIX IS HERE ---
+                # Check if 'gift' is a dictionary before processing
+                if not isinstance(gift, dict):
+                    logger.warning(f"Tonnel API returned a non-dictionary item for '{collection_name}': {gift}")
+                    continue # Skip to the next item
+
                 model_name = gift.get('model', '').split(' (')[0]
                 if model_name in models_in_collection:
                     all_gifts.append(format_tonnel_gift(gift))
@@ -203,7 +193,7 @@ def search_gifts():
 
     logger.info(f"Total gifts from both marketplaces before final filtering: {len(all_gifts)}")
 
-    # --- FINAL FILTERING AND SORTING (Unchanged) ---
+    # Final filtering and sorting...
     if min_price is not None: all_gifts = [g for g in all_gifts if g['price'] >= min_price]
     if max_price is not None: all_gifts = [g for g in all_gifts if g['price'] <= max_price]
     if sort == 'price_asc': all_gifts.sort(key=lambda x: x['price'])
