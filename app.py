@@ -175,7 +175,7 @@ def search_gifts():
             models_in_collection = [m[1] for m in models_for_color if m[0] == collection_name]
             if not models_in_collection: continue
             
-            tonnel_results = getGifts(authData=TONNEL_AUTH_DATA, gift_name=collection_name, backdrop=backdrops[0] if len(backdrops) == 1 else '', limit=30)
+            tonnel_results = getTonnelGifts(authData=TONNEL_AUTH_DATA, gift_name=collection_name, backdrop=backdrops[0] if len(backdrops) == 1 else '', limit=30)
             logger.info(f"Tonnel API returned {len(tonnel_results)} raw results for collection '{collection_name}'.")
             
             for gift in tonnel_results:
