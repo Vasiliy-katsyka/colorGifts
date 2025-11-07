@@ -6,3 +6,4 @@ portalsmp
 pyTelegramBotAPI
 kurigram
 tgcrypto
+gunicorn
