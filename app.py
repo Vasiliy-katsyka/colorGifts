@@ -78,34 +78,98 @@ def get_filters():
 
 @app.route('/api/search', methods=['GET'])
 def search_gifts():
-    # This function remains unchanged
-    args = request.args; color = args.get('color'); collections = args.get('collections', '').split(',') if args.get('collections') else []; backdrops = args.get('backdrops', '').split(',') if args.get('backdrops') else []; min_price = args.get('min_price', type=float); max_price = args.get('max_price', type=float); sort = args.get('sort', 'price_asc')
-    if not color: return jsonify({"error": "Color parameter is required"}), 400
+    logger.info(f"Received search request with args: {request.args}")
+    args = request.args
+    color = args.get('color')
+    collections = args.get('collections', '').split(',') if args.get('collections') else []
+    backdrops = args.get('backdrops', '').split(',') if args.get('backdrops') else []
+    min_price = args.get('min_price', type=float)
+    max_price = args.get('max_price', type=float)
+    sort = args.get('sort', 'price_asc')
+    
+    if not color:
+        logger.warning("Search request failed: Color parameter is required.")
+        return jsonify({"error": "Color parameter is required"}), 400
+
     models_for_color = CACHED_DATA["color_model_map"].get(color, [])
-    if not models_for_color: return jsonify([])
-    if collections: models_for_color = [m for m in models_for_color if m[0] in collections]
+    if not models_for_color:
+        logger.info(f"No models found in cache for color '{color}'.")
+        return jsonify([])
+
+    logger.info(f"Found {len(models_for_color)} potential models for color '{color}'.")
+
+    # Filter models by selected collections if any
+    if collections:
+        initial_model_count = len(models_for_color)
+        models_for_color = [m for m in models_for_color if m[0] in collections]
+        logger.info(f"Filtered models by collection. Count changed from {initial_model_count} to {len(models_for_color)}.")
+
+    if not models_for_color:
+        logger.info("No models left after filtering by collection. Returning empty list.")
+        return jsonify([])
+
     all_gifts = []
+
+    # --- Fetch from Portals ---
     try:
-        gift_names_to_search = list(set([m[0] for m in models_for_color])); model_names_to_search = list(set([m[1] for m in models_for_color]))
-        portals_results = searchPortalsGifts(authData=PORTALS_AUTH_DATA, gift_name=gift_names_to_search, model=model_names_to_search, backdrop=backdrops if backdrops else "", limit=50)
+        gift_names_to_search = list(set([m[0] for m in models_for_color]))
+        model_names_to_search = list(set([m[1] for m in models_for_color]))
+        
+        logger.info(f"Searching Portals with {len(gift_names_to_search)} collections and {len(model_names_to_search)} models.")
+        
+        portals_results = searchPortalsGifts(
+            authData=PORTALS_AUTH_DATA,
+            gift_name=gift_names_to_search,
+            model=model_names_to_search,
+            backdrop=backdrops if backdrops else "",
+            limit=50
+        )
+        
+        logger.info(f"Portals API returned {len(portals_results)} raw results.")
+        
+        # This part remains the same, formatting the valid results
         for gift in portals_results:
             model_attr = next((attr for attr in gift.get('attributes', []) if attr['type'] == 'model'), None)
-            if model_attr and (gift['name'], model_attr['value']) in models_for_color: all_gifts.append(format_portals_gift(gift))
-    except Exception as e: logger.error(f"Error fetching from Portals: {e}", exc_info=True)
+            if model_attr and (gift['name'], model_attr['value']) in models_for_color:
+                all_gifts.append(format_portals_gift(gift))
+
+    except Exception as e:
+        logger.error(f"Error fetching from Portals: {e}", exc_info=True)
+
+    # --- Fetch from Tonnel ---
     try:
         collections_to_search = collections if collections else list(set([m[0] for m in models_for_color]))
+        logger.info(f"Searching Tonnel with {len(collections_to_search)} collections.")
+        
         for collection_name in collections_to_search:
             models_in_collection = [m[1] for m in models_for_color if m[0] == collection_name]
             if not models_in_collection: continue
-            tonnel_results = getTonnelGifts(authData=TONNEL_AUTH_DATA, gift_name=collection_name, backdrop=backdrops[0] if len(backdrops) == 1 else '', limit=30)
+            
+            # Tonnel API might not support list of models, so we fetch and filter
+            tonnel_results = getTonnelGifts(
+                authData=TONNEL_AUTH_DATA,
+                gift_name=collection_name,
+                backdrop=backdrops[0] if len(backdrops) == 1 else '',
+                limit=30
+            )
+            logger.info(f"Tonnel API returned {len(tonnel_results)} raw results for collection '{collection_name}'.")
+            
             for gift in tonnel_results:
                 model_name = gift.get('model', '').split(' (')[0]
-                if model_name in models_in_collection: all_gifts.append(format_tonnel_gift(gift))
-    except Exception as e: logger.error(f"Error fetching from Tonnel: {e}", exc_info=True)
+                if model_name in models_in_collection:
+                    all_gifts.append(format_tonnel_gift(gift))
+    except Exception as e:
+        logger.error(f"Error fetching from Tonnel: {e}", exc_info=True)
+
+    logger.info(f"Total gifts from both marketplaces before final filtering: {len(all_gifts)}")
+
+    # --- FINAL FILTERING AND SORTING (Unchanged) ---
     if min_price is not None: all_gifts = [g for g in all_gifts if g['price'] >= min_price]
     if max_price is not None: all_gifts = [g for g in all_gifts if g['price'] <= max_price]
     if sort == 'price_asc': all_gifts.sort(key=lambda x: x['price'])
     elif sort == 'price_desc': all_gifts.sort(key=lambda x: x['price'], reverse=True)
+    
+    logger.info(f"Returning {len(all_gifts)} gifts to the frontend.")
     return jsonify(all_gifts)
 
 
