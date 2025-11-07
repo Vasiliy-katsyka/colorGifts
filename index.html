@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Gift Finder</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        :root {
+            --tg-theme-bg-color: #181a1b;
+            --tg-theme-text-color: #ffffff;
+            --tg-theme-hint-color: #aaaaaa;
+            --tg-theme-link-color: #8774e1;
+            --tg-theme-button-color: #5288c1;
+            --tg-theme-button-text-color: #ffffff;
+            --glass-bg: rgba(40, 42, 44, 0.6);
+            --border-color: rgba(255, 255, 255, 0.1);
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            margin: 0;
+            padding: 0 0 70px 0; /* Padding at bottom for nav */
+            color: var(--tg-theme-text-color);
+            background-color: var(--tg-theme-bg-color);
+            overscroll-behavior: none;
+        }
+
+        .app-container {
+            padding: 15px;
+        }
+
+        /* --- Filters --- */
+        .filters-container {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+        .filter-btn {
+            padding: 8px 15px;
+            border-radius: 12px;
+            background: var(--glass-bg);
+            border: 1px solid var(--border-color);
+            color: var(--tg-theme-text-color);
+            font-size: 14px;
+            cursor: pointer;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            transition: background-color 0.2s;
+        }
+        .filter-btn:hover { background: rgba(50, 52, 54, 0.8); }
+        .filter-btn.active {
+            background-color: var(--tg-theme-button-color);
+            color: var(--tg-theme-button-text-color);
+            border-color: var(--tg-theme-button-color);
+        }
+
+        .expander {
+            width: 100%;
+            margin-bottom: 15px;
+        }
+        .expander-header {
+            cursor: pointer;
+            color: var(--tg-theme-hint-color);
+            font-size: 14px;
+        }
+        .advanced-filters {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out;
+            background: var(--glass-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            margin-top: 10px;
+            padding: 0 15px;
+        }
+        .advanced-filters.open {
+            max-height: 500px; /* Adjust as needed */
+            padding: 15px;
+        }
+        .filter-group {
+            margin-bottom: 15px;
+        }
+        .filter-group label { display: block; margin-bottom: 8px; font-size: 14px; color: var(--tg-theme-hint-color); }
+        .price-range { display: flex; gap: 10px; }
+        .price-range input, .sort-select {
+            width: 100%;
+            padding: 8px;
+            background: rgba(0,0,0,0.2);
+            border: 1px solid var(--border-color);
+            color: var(--tg-theme-text-color);
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        /* --- Gift Grid --- */
+        .gift-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+        }
+        .gift-card {
+            background: var(--glass-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+        .gift-card img {
+            width: 100%;
+            aspect-ratio: 1 / 1;
+            background-color: rgba(0,0,0,0.2);
+        }
+        .gift-info { padding: 10px; }
+        .gift-name {
+            font-size: 14px;
+            font-weight: 600;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-bottom: 5px;
+        }
+        .gift-model {
+            font-size: 12px;
+            color: var(--tg-theme-hint-color);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-bottom: 10px;
+        }
+        .gift-actions {
+            display: flex;
+            gap: 8px;
+        }
+        .price-btn, .cart-btn {
+            border: none;
+            border-radius: 8px;
+            padding: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            transition: transform 0.1s;
+        }
+        .price-btn {
+            flex-grow: 1;
+            background-color: var(--tg-theme-button-color);
+            color: var(--tg-theme-button-text-color);
+        }
+        .cart-btn {
+            background-color: rgba(255, 255, 255, 0.1);
+            color: var(--tg-theme-text-color);
+            flex-shrink: 0;
+            width: 36px;
+        }
+        .price-btn:active, .cart-btn:active { transform: scale(0.95); }
+        .cart-btn.in-cart {
+            background-color: #28a745; /* Green for in-cart */
+        }
+
+        /* --- Modal --- */
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s, visibility 0.3s;
+            z-index: 1000;
+        }
+        .modal-overlay.visible {
+            opacity: 1;
+            visibility: visible;
+        }
+        .modal-content {
+            background: #1c1e21;
+            width: 100%;
+            max-height: 80vh;
+            border-radius: 20px 20px 0 0;
+            padding: 15px;
+            box-sizing: border-box;
+            transform: translateY(100%);
+            transition: transform 0.3s ease-out;
+        }
+        .modal-overlay.visible .modal-content {
+            transform: translateY(0);
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        .modal-header h2 { margin: 0; font-size: 20px; }
+        .close-btn, .clear-btn {
+            background: none; border: none; font-size: 16px;
+            color: var(--tg-theme-link-color); cursor: pointer;
+        }
+        .modal-search {
+            width: 100%;
+            padding: 10px;
+            box-sizing: border-box;
+            margin-bottom: 15px;
+            background: rgba(0,0,0,0.3);
+            border: 1px solid var(--border-color);
+            color: var(--tg-theme-text-color);
+            border-radius: 10px;
+        }
+        .modal-list {
+            max-height: calc(80vh - 150px);
+            overflow-y: auto;
+        }
+        .modal-item {
+            display: flex;
+            align-items: center;
+            padding: 10px;
+            border-radius: 10px;
+            cursor: pointer;
+            gap: 15px;
+        }
+        .modal-item.selected {
+            background: rgba(82, 136, 193, 0.2);
+        }
+        .modal-item img { width: 40px; height: 40px; border-radius: 8px; }
+        .backdrop-preview {
+            width: 40px; height: 40px; border-radius: 8px;
+            flex-shrink: 0;
+        }
+
+        /* --- Navigation --- */
+        .bottom-nav {
+            position: fixed;
+            bottom: 0; left: 0; right: 0;
+            height: 60px;
+            background: var(--glass-bg);
+            border-top: 1px solid var(--border-color);
+            backdrop-filter: blur(15px);
+            -webkit-backdrop-filter: blur(15px);
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            z-index: 500;
+        }
+        .nav-btn {
+            background: none; border: none;
+            color: var(--tg-theme-hint-color);
+            cursor: pointer;
+            display: flex; flex-direction: column;
+            align-items: center;
+            gap: 4px; font-size: 12px;
+        }
+        .nav-btn.active { color: var(--tg-theme-link-color); }
+        .nav-btn svg { width: 24px; height: 24px; }
+        
+        /* --- Loader --- */
+        .loader {
+            text-align: center;
+            padding: 50px;
+            font-size: 18px;
+            color: var(--tg-theme-hint-color);
+        }
+
+        /* --- Views --- */
+        .view { display: none; }
+        .view.active { display: block; }
+    </style>
+</head>
+<body>
+
+    <div class="app-container">
+        <!-- Search View -->
+        <div id="search-view" class="view active">
+            <div class="filters-container">
+                <button id="color-filter-btn" class="filter-btn">Color</button>
+                <button id="collection-filter-btn" class="filter-btn">Collection</button>
+                <button id="backdrop-filter-btn" class="filter-btn">Backdrop</button>
+            </div>
+
+            <div class="expander">
+                <div class="expander-header" id="expander-header">Advanced Filters ▼</div>
+                <div class="advanced-filters" id="advanced-filters">
+                    <div class="filter-group">
+                        <label>Price Range (TON)</label>
+                        <div class="price-range">
+                            <input type="number" id="min-price" placeholder="Min">
+                            <input type="number" id="max-price" placeholder="Max">
+                        </div>
+                    </div>
+                    <div class="filter-group">
+                        <label>Sort By</label>
+                        <select id="sort-select" class="sort-select">
+                            <option value="price_asc">Price: Low to High</option>
+                            <option value="price_desc">Price: High to Low</option>
+                            <option value="rarity_desc">Rarity: High to Low</option>
+                            <option value="latest">Latest</option>
+                        </select>
+                    </div>
+                    <button id="apply-advanced-filters" class="filter-btn active" style="width: 100%;">Apply</button>
+                </div>
+            </div>
+
+            <div id="gift-grid-search" class="gift-grid"></div>
+            <div id="loader-search" class="loader">Select a color to start...</div>
+        </div>
+
+        <!-- Cart View -->
+        <div id="cart-view" class="view">
+            <h2 style="margin-top: 0;">My Cart</h2>
+            <div id="gift-grid-cart" class="gift-grid"></div>
+            <div id="loader-cart" class="loader">Your cart is empty.</div>
+        </div>
+    </div>
+
+    <!-- Bottom Navigation -->
+    <nav class="bottom-nav">
+        <button id="nav-search" class="nav-btn active">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" /></svg>
+            <span>Search</span>
+        </button>
+        <button id="nav-cart" class="nav-btn">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 0 0-3 3h15.75m-12.75-3h11.218c.51 0 .962-.344 1.087-.835l1.838-5.513a1.125 1.125 0 0 0-1.087-1.415H5.438M7.5 14.25 5.106 5.165A1.125 1.125 0 0 0 4.02 4.125H2.25" /></svg>
+            <span>Cart</span>
+        </button>
+    </nav>
+    
+    <!-- Filter Modal -->
+    <div id="filter-modal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modal-title">Filter</h2>
+                <div>
+                    <button id="modal-clear-btn" class="clear-btn">Clear all</button>
+                    <button id="modal-close-btn" class="close-btn">Close</button>
+                </div>
+            </div>
+            <input type="text" id="modal-search" class="modal-search" placeholder="Search...">
+            <div id="modal-list" class="modal-list"></div>
+        </div>
+    </div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const tg = window.Telegram.WebApp;
+        tg.ready();
+        tg.expand();
+
+        // --- CONFIG ---
+        const API_BASE_URL = 'https://colorgifts.onrender.com/api'; // IMPORTANT: Change this to your Render URL
+
+        // --- STATE ---
+        let state = {
+            allFiltersData: {},
+            currentFilters: {
+                color: null,
+                collections: new Set(),
+                backdrops: new Set(),
+                minPrice: '',
+                maxPrice: '',
+                sort: 'price_asc'
+            },
+            cart: [],
+            currentView: 'search'
+        };
+
+        // --- ELEMENTS ---
+        const elements = {
+            // Views
+            searchView: document.getElementById('search-view'),
+            cartView: document.getElementById('cart-view'),
+            // Grids & Loaders
+            searchGrid: document.getElementById('gift-grid-search'),
+            cartGrid: document.getElementById('gift-grid-cart'),
+            searchLoader: document.getElementById('loader-search'),
+            cartLoader: document.getElementById('loader-cart'),
+            // Filter Buttons
+            colorBtn: document.getElementById('color-filter-btn'),
+            collectionBtn: document.getElementById('collection-filter-btn'),
+            backdropBtn: document.getElementById('backdrop-filter-btn'),
+            // Advanced Filters
+            expanderHeader: document.getElementById('expander-header'),
+            advancedFiltersContainer: document.getElementById('advanced-filters'),
+            minPriceInput: document.getElementById('min-price'),
+            maxPriceInput: document.getElementById('max-price'),
+            sortSelect: document.getElementById('sort-select'),
+            applyAdvancedBtn: document.getElementById('apply-advanced-filters'),
+            // Modal
+            modal: document.getElementById('filter-modal'),
+            modalTitle: document.getElementById('modal-title'),
+            modalList: document.getElementById('modal-list'),
+            modalSearch: document.getElementById('modal-search'),
+            modalCloseBtn: document.getElementById('modal-close-btn'),
+            modalClearBtn: document.getElementById('modal-clear-btn'),
+            // Navigation
+            navSearch: document.getElementById('nav-search'),
+            navCart: document.getElementById('nav-cart'),
+        };
+
+        let currentModalFilterType = null;
+
+        // --- CART LOGIC ---
+        const loadCart = () => {
+            const savedCart = localStorage.getItem('giftFinderCart');
+            state.cart = savedCart ? JSON.parse(savedCart) : [];
+            updateCartButtonStates();
+        };
+
+        const saveCart = () => {
+            localStorage.setItem('giftFinderCart', JSON.stringify(state.cart));
+            updateCartButtonStates();
+        };
+
+        const addToCart = (gift) => {
+            if (!state.cart.some(item => item.id === gift.id)) {
+                state.cart.push(gift);
+                saveCart();
+                renderCart();
+            }
+        };
+
+        const removeFromCart = (giftId) => {
+            state.cart = state.cart.filter(item => item.id !== giftId);
+            saveCart();
+            renderCart();
+        };
+
+        const isGiftInCart = (giftId) => state.cart.some(item => item.id === giftId);
+
+        const updateCartButtonStates = () => {
+            document.querySelectorAll('.cart-btn').forEach(btn => {
+                const giftId = btn.dataset.giftId;
+                if (isGiftInCart(giftId)) {
+                    btn.classList.add('in-cart');
+                    btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" width="20" height="20"><path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd" /></svg>`;
+                } else {
+                    btn.classList.remove('in-cart');
+                    btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="20" height="20"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>`;
+                }
+            });
+        };
+
+        // --- RENDERING ---
+        const createGiftCard = (gift) => {
+            const card = document.createElement('div');
+            card.className = 'gift-card';
+            const price = parseFloat(gift.price).toFixed(2);
+            card.innerHTML = `
+                <img src="${gift.imageUrl}" alt="${gift.name}" loading="lazy">
+                <div class="gift-info">
+                    <div class="gift-name">${gift.name}</div>
+                    <div class="gift-model">${gift.model}</div>
+                    <div class="gift-actions">
+                        <button class="price-btn" data-link="${gift.buyUrl}">${price} 💎</button>
+                        <button class="cart-btn" data-gift-id="${gift.id}"></button>
+                    </div>
+                </div>
+            `;
+            const cartBtn = card.querySelector('.cart-btn');
+            cartBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (isGiftInCart(gift.id)) {
+                    removeFromCart(gift.id);
+                } else {
+                    addToCart(gift);
+                }
+            });
+
+            card.querySelector('.price-btn').addEventListener('click', (e) => {
+                e.stopPropagation();
+                tg.openLink(e.currentTarget.dataset.link);
+            });
+            return card;
+        };
+
+        const renderGifts = (gifts, container, loader) => {
+            container.innerHTML = '';
+            if (gifts.length === 0) {
+                loader.textContent = container.id.includes('cart') ? 'Your cart is empty.' : 'No gifts found for these filters.';
+                loader.style.display = 'block';
+            } else {
+                loader.style.display = 'none';
+                gifts.forEach(gift => container.appendChild(createGiftCard(gift)));
+                updateCartButtonStates();
+            }
+        };
+
+        const renderCart = () => {
+            renderGifts(state.cart, elements.cartGrid, elements.cartLoader);
+        };
+        
+        // --- API & DATA FETCHING ---
+        const fetchAllFilters = async () => {
+            try {
+                const response = await fetch(`${API_BASE_URL}/filters`);
+                if (!response.ok) throw new Error('Network response was not ok');
+                state.allFiltersData = await response.json();
+            } catch (error) {
+                console.error("Failed to fetch filters:", error);
+                elements.searchLoader.textContent = 'Error loading filters. Please try again later.';
+            }
+        };
+
+        const fetchGifts = async () => {
+            if (!state.currentFilters.color) {
+                elements.searchGrid.innerHTML = '';
+                elements.searchLoader.textContent = 'Select a color to start...';
+                elements.searchLoader.style.display = 'block';
+                return;
+            }
+
+            elements.searchLoader.textContent = 'Searching...';
+            elements.searchLoader.style.display = 'block';
+            elements.searchGrid.innerHTML = '';
+
+            const params = new URLSearchParams({
+                color: state.currentFilters.color,
+                sort: state.currentFilters.sort
+            });
+            if (state.currentFilters.collections.size > 0) params.append('collections', Array.from(state.currentFilters.collections).join(','));
+            if (state.currentFilters.backdrops.size > 0) params.append('backdrops', Array.from(state.currentFilters.backdrops).join(','));
+            if (state.currentFilters.minPrice) params.append('min_price', state.currentFilters.minPrice);
+            if (state.currentFilters.maxPrice) params.append('max_price', state.currentFilters.maxPrice);
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/search?${params.toString()}`);
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                const gifts = await response.json();
+                renderGifts(gifts, elements.searchGrid, elements.searchLoader);
+            } catch (error) {
+                console.error("Failed to fetch gifts:", error);
+                elements.searchLoader.textContent = 'Failed to load gifts. Please check your connection.';
+            }
+        };
+
+        // --- MODAL LOGIC ---
+        const openModal = (filterType) => {
+            currentModalFilterType = filterType;
+            elements.modalTitle.textContent = `Select ${filterType.charAt(0).toUpperCase() + filterType.slice(1)}`;
+            populateModalList();
+            elements.modal.classList.add('visible');
+        };
+
+        const closeModal = () => {
+            elements.modal.classList.remove('visible');
+        };
+
+        const populateModalList = (searchTerm = '') => {
+            elements.modalList.innerHTML = '';
+            let items = [];
+            
+            switch(currentModalFilterType) {
+                case 'color':
+                    items = state.allFiltersData.colors || [];
+                    break;
+                case 'collection':
+                    items = state.allFiltersData.collections || [];
+                    break;
+                case 'backdrop':
+                    items = state.allFiltersData.backdrops || [];
+                    break;
+            }
+
+            if (searchTerm) {
+                items = items.filter(item => item.name.toLowerCase().includes(searchTerm.toLowerCase()));
+            }
+
+            items.forEach(item => {
+                const li = document.createElement('div');
+                li.className = 'modal-item';
+                li.dataset.value = item.name;
+                
+                let isSelected = false;
+                if (currentModalFilterType === 'color') {
+                    isSelected = state.currentFilters.color === item.name;
+                    li.innerHTML = `<span>${item.name.charAt(0).toUpperCase() + item.name.slice(1)}</span>`;
+                } else {
+                    const currentSet = currentModalFilterType === 'collection' ? state.currentFilters.collections : state.currentFilters.backdrops;
+                    isSelected = currentSet.has(item.name);
+                    
+                    if(currentModalFilterType === 'collection') {
+                        li.innerHTML = `<img src="https://cdn.changes.tg/gifts/originals/${item.id}/Original.png" alt=""><span>${item.name}</span>`;
+                    } else { // backdrop
+                         const gradient = `radial-gradient(circle, ${item.hex.centerColor}, ${item.hex.edgeColor})`;
+                         li.innerHTML = `<div class="backdrop-preview" style="background: ${gradient};"></div><span>${item.name}</span>`;
+                    }
+                }
+
+                if (isSelected) li.classList.add('selected');
+                
+                li.addEventListener('click', () => handleModalItemClick(item.name));
+                elements.modalList.appendChild(li);
+            });
+        };
+
+        const handleModalItemClick = (value) => {
+            if (currentModalFilterType === 'color') {
+                state.currentFilters.color = state.currentFilters.color === value ? null : value;
+            } else {
+                const currentSet = currentModalFilterType === 'collection' ? state.currentFilters.collections : state.currentFilters.backdrops;
+                if (currentSet.has(value)) {
+                    currentSet.delete(value);
+                } else {
+                    currentSet.add(value);
+                }
+            }
+            updateFilterButtons();
+            populateModalList(elements.modalSearch.value);
+            // Auto-search on color change or modal close
+            if (currentModalFilterType === 'color') {
+                 closeModal();
+                 fetchGifts();
+            }
+        };
+
+        const updateFilterButtons = () => {
+            // Color
+            if (state.currentFilters.color) {
+                elements.colorBtn.classList.add('active');
+                elements.colorBtn.textContent = `Color: ${state.currentFilters.color}`;
+            } else {
+                elements.colorBtn.classList.remove('active');
+                elements.colorBtn.textContent = 'Color';
+            }
+            // Collection
+            const collCount = state.currentFilters.collections.size;
+            if (collCount > 0) {
+                elements.collectionBtn.classList.add('active');
+                elements.collectionBtn.textContent = `Collection (${collCount})`;
+            } else {
+                elements.collectionBtn.classList.remove('active');
+                elements.collectionBtn.textContent = 'Collection';
+            }
+            // Backdrop
+            const backCount = state.currentFilters.backdrops.size;
+            if (backCount > 0) {
+                elements.backdropBtn.classList.add('active');
+                elements.backdropBtn.textContent = `Backdrop (${backCount})`;
+            } else {
+                elements.backdropBtn.classList.remove('active');
+                elements.backdropBtn.textContent = 'Backdrop';
+            }
+        };
+
+        const clearModalFilter = () => {
+            if (currentModalFilterType === 'color') {
+                state.currentFilters.color = null;
+            } else if (currentModalFilterType === 'collection') {
+                state.currentFilters.collections.clear();
+            } else if (currentModalFilterType === 'backdrop') {
+                state.currentFilters.backdrops.clear();
+            }
+            updateFilterButtons();
+            populateModalList();
+        };
+
+        // --- EVENT LISTENERS ---
+        elements.colorBtn.addEventListener('click', () => openModal('color'));
+        elements.collectionBtn.addEventListener('click', () => openModal('collection'));
+        elements.backdropBtn.addEventListener('click', () => openModal('backdrop'));
+        
+        elements.modalCloseBtn.addEventListener('click', () => {
+            closeModal();
+            fetchGifts(); // Re-fetch on close to apply multi-selections
+        });
+        elements.modal.addEventListener('click', (e) => {
+            if (e.target === elements.modal) {
+                closeModal();
+                fetchGifts();
+            }
+        });
+        elements.modalClearBtn.addEventListener('click', clearModalFilter);
+        elements.modalSearch.addEventListener('input', (e) => populateModalList(e.target.value));
+
+        elements.expanderHeader.addEventListener('click', () => {
+            elements.advancedFiltersContainer.classList.toggle('open');
+            const is_open = elements.advancedFiltersContainer.classList.contains('open');
+            elements.expanderHeader.textContent = `Advanced Filters ${is_open ? '▲' : '▼'}`;
+        });
+
+        elements.applyAdvancedBtn.addEventListener('click', () => {
+            state.currentFilters.minPrice = elements.minPriceInput.value;
+            state.currentFilters.maxPrice = elements.maxPriceInput.value;
+            state.currentFilters.sort = elements.sortSelect.value;
+            fetchGifts();
+        });
+
+        // Navigation
+        const switchView = (viewName) => {
+            state.currentView = viewName;
+            document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+            
+            if (viewName === 'search') {
+                elements.searchView.classList.add('active');
+                elements.navSearch.classList.add('active');
+            } else { // cart
+                elements.cartView.classList.add('active');
+                elements.navCart.classList.add('active');
+                renderCart();
+            }
+        };
+
+        elements.navSearch.addEventListener('click', () => switchView('search'));
+        elements.navCart.addEventListener('click', () => switchView('cart'));
+        
+        // --- INITIALIZATION ---
+        const init = async () => {
+            loadCart();
+            await fetchAllFilters();
+            // Initial render state
+            elements.searchLoader.style.display = 'block';
+        };
+
+        init();
+    });
+    </script>
+</body>
+</html>
