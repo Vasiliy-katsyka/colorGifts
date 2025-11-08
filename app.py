@@ -109,7 +109,7 @@ def get_models():
     for collection_name, model_name in filtered_models:
         encoded_collection = quote(collection_name)
         encoded_model = quote(model_name)
-        image_url = f"https://cdn.changes.tg/gifts/models/{encoded_collection}/{encoded_model}.png"
+        image_url = f"https://cdn.changes.tg/gifts/models/{encoded_collection}/png/{encoded_model}.png"
         
         response_data.append({
             "collection": collection_name,
