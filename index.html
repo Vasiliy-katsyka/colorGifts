@@ -21,8 +21,6 @@
             margin: 0; padding: 15px; color: var(--tg-theme-text-color);
             background-color: var(--tg-theme-bg-color); overscroll-behavior: none;
         }
-
-        /* --- Filters --- */
         .filters-container { display: flex; gap: 10px; margin-bottom: 20px; }
         .filter-btn {
             padding: 10px 18px; border-radius: 12px; background: var(--glass-bg);
@@ -35,8 +33,6 @@
             background-color: var(--tg-theme-button-color); color: var(--tg-theme-button-text-color);
             border-color: var(--tg-theme-button-color);
         }
-
-        /* --- Model Grid --- */
         .model-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; }
         .model-card {
             background: var(--glass-bg); border: 1px solid var(--border-color);
@@ -46,21 +42,17 @@
         .model-image-container {
             width: 100%; aspect-ratio: 1 / 1;
             display: flex; justify-content: center; align-items: center;
-            /* Default transparent background, will be replaced by JS */
             background: transparent;
         }
         .model-image-container img {
             width: 75%; height: 75%;
-            object-fit: contain; /* Prevents image from stretching */
+            object-fit: contain;
             display: block;
-            /* Fancy drop shadow for better visibility */
             filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.4));
         }
         .model-info { padding: 12px; }
         .model-name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .collection-name { font-size: 12px; color: var(--tg-theme-hint-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
-        /* --- Modal --- */
         .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.5); display: flex; align-items: flex-end; justify-content: center; opacity: 0; visibility: hidden; transition: opacity 0.3s, visibility 0.3s; z-index: 1000; }
         .modal-overlay.visible { opacity: 1; visibility: visible; }
         .modal-content { background: #1c1e21; width: 100%; max-height: 80vh; border-radius: 20px 20px 0 0; padding: 15px; box-sizing: border-box; transform: translateY(100%); transition: transform 0.3s ease-out; }
@@ -74,8 +66,6 @@
         .modal-item.selected { background: rgba(82, 136, 193, 0.2); }
         .modal-item img { width: 40px; height: 40px; border-radius: 8px; }
         .backdrop-preview { width: 40px; height: 40px; border-radius: 8px; flex-shrink: 0; }
-        
-        /* --- Loader / Message --- */
         .message-container { text-align: center; padding: 50px; font-size: 18px; color: var(--tg-theme-hint-color); }
     </style>
 </head>
@@ -109,7 +99,7 @@
         const tg = window.Telegram.WebApp;
         tg.ready(); tg.expand();
 
-        const API_BASE_URL = 'https://colorgifts.onrender.com/api';
+        const API_BASE_URL = 'https://colorgifts.onrender.com/api'; // CHANGE THIS
 
         let state = {
             allFiltersData: {},
@@ -181,7 +171,7 @@
 
         const fetchModels = async () => {
             if (!state.currentFilters.color) {
-                renderModels(); // Will show the "Select a color" message
+                renderModels();
                 return;
             }
 
@@ -189,7 +179,10 @@
             elements.message.style.display = 'block';
             elements.grid.innerHTML = '';
 
-            const params = new URLSearchParams({ color: state.currentFilters.color });
+            // --- FIX IS HERE ---
+            // We must use the .name property of the color object
+            const params = new URLSearchParams({ color: state.currentFilters.color.name });
+            
             if (state.currentFilters.collections.size > 0) {
                 params.append('collections', Array.from(state.currentFilters.collections).join(','));
             }
@@ -246,7 +239,7 @@
         const handleModalItemClick = (item) => {
             if (currentModalFilterType === 'color' || currentModalFilterType === 'backdrop') {
                 state.currentFilters[currentModalFilterType] = state.currentFilters[currentModalFilterType]?.name === item.name ? null : item;
-            } else { // collection
+            } else {
                 const set = state.currentFilters.collections;
                 set.has(item.name) ? set.delete(item.name) : set.add(item.name);
             }
@@ -258,6 +251,8 @@
         };
         
         const updateFilterButtons = () => {
+            // --- FIX IS HERE ---
+            // We must check if the color object exists before accessing its .name property
             elements.colorBtn.textContent = state.currentFilters.color ? state.currentFilters.color.name : 'Color';
             elements.colorBtn.classList.toggle('active', !!state.currentFilters.color);
             
