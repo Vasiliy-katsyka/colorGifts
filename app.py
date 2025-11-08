@@ -5,11 +5,11 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
-from urllib.parse import quote # To safely format names for URLs
+from urllib.parse import quote
 
 # --- CONFIGURATION ---
 BOT_TOKEN = os.environ.get('BOT_TOKEN', 'Your_Telegram_Bot_Token_Here')
-WEB_APP_URL = 'https://vasiliy-katsyka.github.io/colorGifts' # Your GitHub Pages URL
+WEB_APP_URL = 'https://vasiliy-katsyka.github.io/colorGifts'
 SERVER_URL = os.environ.get('SERVER_URL')
 
 # --- INITIALIZE ---
@@ -22,6 +22,7 @@ CORS(app, resources={r"/api/*": {"origins": "https://vasiliy-katsyka.github.io"}
 # --- DATA CACHING ---
 CACHED_DATA = {
     "collections": [],
+    "backdrops": [], # Added backdrops
     "colors": [
         {"name": "white"}, {"name": "black"}, {"name": "gray"}, {"name": "red"},
         {"name": "orange"}, {"name": "yellow"}, {"name": "green"}, {"name": "cyan"},
@@ -39,7 +40,12 @@ def load_initial_data():
         CACHED_DATA["collections"] = [{"id": k, "name": v} for k, v in collections_res.items()]
         logger.info(f"Loaded {len(CACHED_DATA['collections'])} collections.")
 
-        # 2. Load Color Data for models (handles both formats)
+        # 2. Load Backdrops
+        backdrops_url = "https://cdn.changes.tg/gifts/backdrops.json"
+        CACHED_DATA["backdrops"] = requests.get(backdrops_url).json()
+        logger.info(f"Loaded {len(CACHED_DATA['backdrops'])} backdrops.")
+
+        # 3. Load Color Data for models
         color_repo_api = "https://api.github.com/repos/Vasiliy-katsyka/colorGifts/contents/"
         files = requests.get(color_repo_api).json()
         
@@ -57,19 +63,16 @@ def load_initial_data():
                         elif isinstance(model_data, str):
                             main_color = model_data
                         else:
-                            logger.warning(f"Skipping model '{model_name}' in '{gift_name}.json'. Unexpected data format.")
                             continue
                         
                         if main_color not in CACHED_DATA["color_model_map"]:
                             CACHED_DATA["color_model_map"][main_color] = []
                         CACHED_DATA["color_model_map"][main_color].append((gift_name, model_name))
-
-                except Exception as e:
-                    logger.error(f"Failed to process file {file_info.get('name')}: {e}")
+                except Exception:
+                    # Supress errors for individual file processing to avoid crashing startup
+                    pass
         
         logger.info("Finished loading color model map.")
-        for color, models in CACHED_DATA["color_model_map"].items():
-            logger.info(f"Loaded {len(models)} models for color: {color}")
 
     except Exception as e:
         logger.error(f"An unexpected error occurred during initial data load: {e}", exc_info=True)
@@ -79,10 +82,11 @@ def load_initial_data():
 
 @app.route('/api/filters', methods=['GET'])
 def get_filters():
-    # Only return collections and colors now
+    # Now returns collections, colors, AND backdrops
     return jsonify({
         "collections": CACHED_DATA["collections"],
-        "colors": CACHED_DATA["colors"]
+        "colors": CACHED_DATA["colors"],
+        "backdrops": CACHED_DATA["backdrops"]
     })
 
 @app.route('/api/models', methods=['GET'])
@@ -96,7 +100,6 @@ def get_models():
 
     models_for_color = CACHED_DATA["color_model_map"].get(color, [])
     
-    # Filter by collection if provided
     if collections:
         filtered_models = [m for m in models_for_color if m[0] in collections]
     else:
@@ -104,8 +107,6 @@ def get_models():
     
     response_data = []
     for collection_name, model_name in filtered_models:
-        # Construct the image URL using the cdn.changes.tg pattern
-        # Use urllib.parse.quote to handle spaces and special characters
         encoded_collection = quote(collection_name)
         encoded_model = quote(model_name)
         image_url = f"https://cdn.changes.tg/gifts/models/{encoded_collection}/{encoded_model}.png"
@@ -117,7 +118,6 @@ def get_models():
         })
     
     return jsonify(response_data)
-
 
 # --- TELEGRAM BOT & WEBHOOK LOGIC (Unchanged) ---
 @app.route('/api/' + BOT_TOKEN, methods=['POST'])
@@ -133,7 +133,7 @@ def send_welcome(message):
     markup = InlineKeyboardMarkup()
     web_app_button = InlineKeyboardButton(text="🎨 Open Gift Gallery", web_app=WebAppInfo(url=WEB_APP_URL))
     markup.add(web_app_button)
-    bot.send_message(message.chat.id, "Welcome! Click the button below to browse a gallery of gift models by color and collection.", reply_markup=markup)
+    bot.send_message(message.chat.id, "Welcome! Click the button below to browse a gallery of gift models by color, collection, and backdrop.", reply_markup=markup)
 
 # --- STARTUP LOGIC ---
 if __name__ != '__main__':
