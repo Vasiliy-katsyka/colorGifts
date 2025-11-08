@@ -64,7 +64,14 @@
         .modal-item { display: flex; align-items: center; padding: 10px; border-radius: 10px; cursor: pointer; gap: 15px; }
         .modal-item.selected { background: rgba(82, 136, 193, 0.2); }
         .modal-item img { width: 40px; height: 40px; border-radius: 8px; }
-        .backdrop-preview { width: 40px; height: 40px; border-radius: 8px; flex-shrink: 0; }
+        /* New styles for color swatches */
+        .color-swatch, .backdrop-preview {
+            width: 28px; height: 28px;
+            border-radius: 50%; /* Make it a circle */
+            flex-shrink: 0;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        }
         .message-container { text-align: center; padding: 50px; font-size: 18px; color: var(--tg-theme-hint-color); }
     </style>
 </head>
@@ -92,14 +99,26 @@
         const tg = window.Telegram.WebApp;
         tg.ready(); tg.expand();
 
-        // All data will be fetched and stored client-side
         const appData = {
             collections: [],
             backdrops: [],
+            // --- CHANGE 1: New color list with RGB values ---
             colors: [
-                {name: "white"}, {name: "black"}, {name: "gray"}, {name: "red"},
-                {name: "orange"}, {name: "yellow"}, {name: "green"}, {name: "cyan"},
-                {name: "blue"}, {name: "purple"}, {name: "pink"}, {name: "unknown"}
+                { name: "black", rgb: [0, 0, 0] },
+                { name: "gray", rgb: [128, 128, 128] },
+                { name: "silver", rgb: [192, 192, 192] },
+                { name: "white", rgb: [255, 255, 255] },
+                { name: "red", rgb: [255, 0, 0] },
+                { name: "brown", rgb: [139, 69, 19] },
+                { name: "orange", rgb: [255, 165, 0] },
+                { name: "gold", rgb: [255, 215, 0] },
+                { name: "yellow", rgb: [255, 255, 0] },
+                { name: "green", rgb: [0, 128, 0] },
+                { name: "cyan", rgb: [0, 255, 255] },
+                { name: "blue", rgb: [0, 0, 255] },
+                { name: "purple", rgb: [128, 0, 128] },
+                { name: "pink", rgb: [255, 192, 203] },
+                { name: "unknown", rgb: [50, 50, 50] } // Added unknown for completeness
             ],
             colorModelMap: {}
         };
@@ -160,6 +179,8 @@
                 filteredModels.forEach(([collectionName, modelName]) => {
                     const encodedCollection = encodeURIComponent(collectionName);
                     const encodedModel = encodeURIComponent(modelName);
+                    
+                    // --- CHANGE 2: Updated model image URL format ---
                     const modelData = {
                         collection: collectionName,
                         model: modelName,
@@ -172,7 +193,6 @@
 
         const fetchAllData = async () => {
             try {
-                // Fetch collections and backdrops in parallel
                 const [collectionsRes, backdropsRes] = await Promise.all([
                     fetch("https://cdn.changes.tg/gifts/id-to-name.json"),
                     fetch("https://cdn.changes.tg/gifts/backdrops.json")
@@ -181,20 +201,16 @@
                 appData.collections = Object.entries(collectionsJson).map(([id, name]) => ({ id, name }));
                 appData.backdrops = await backdropsRes.json();
 
-                // Fetch the list of color JSON files from the GitHub repo
                 const repoApiUrl = "https://api.github.com/repos/Vasiliy-katsyka/colorGifts/contents/";
                 const filesRes = await fetch(repoApiUrl);
                 const files = await filesRes.json();
 
-                // Create an array of promises to fetch all JSON files
                 const fileFetchPromises = files
                     .filter(file => file.name && file.name.endsWith('.json'))
                     .map(file => fetch(file.download_url).then(res => res.json().then(data => ({ name: file.name, data }))));
 
-                // Wait for all color files to be downloaded and parsed
                 const allColorData = await Promise.all(fileFetchPromises);
 
-                // Process all the downloaded data to build the color map
                 allColorData.forEach(({ name, data }) => {
                     const giftName = name.replace('.json', '');
                     for (const [modelName, modelData] of Object.entries(data)) {
@@ -207,7 +223,6 @@
                     }
                 });
                 
-                // --- Loading Complete ---
                 elements.message.textContent = 'Select a color to begin...';
                 elements.colorBtn.disabled = false;
                 elements.backdropBtn.disabled = false;
@@ -236,16 +251,21 @@
                 const li = document.createElement('div');
                 li.className = 'modal-item';
                 let isSelected = false;
-                if (currentModalFilterType === 'color' || currentModalFilterType === 'backdrop') {
-                    isSelected = state.currentFilters[currentModalFilterType]?.name === item.name;
-                    if (currentModalFilterType === 'backdrop') {
-                        const gradient = `radial-gradient(circle, ${item.hex.centerColor}, ${item.hex.edgeColor})`;
-                        li.innerHTML = `<div class="backdrop-preview" style="background: ${gradient};"></div><span>${item.name}</span>`;
-                    } else { li.innerHTML = `<span>${item.name.charAt(0).toUpperCase() + item.name.slice(1)}</span>`; }
+
+                // --- CHANGE 3: Logic to display color swatch ---
+                if (currentModalFilterType === 'color') {
+                    isSelected = state.currentFilters.color?.name === item.name;
+                    const [r, g, b] = item.rgb;
+                    li.innerHTML = `<div class="color-swatch" style="background-color: rgb(${r}, ${g}, ${b});"></div><span>${item.name.charAt(0).toUpperCase() + item.name.slice(1)}</span>`;
+                } else if (currentModalFilterType === 'backdrop') {
+                    isSelected = state.currentFilters.backdrop?.name === item.name;
+                    const gradient = `radial-gradient(circle, ${item.hex.centerColor}, ${item.hex.edgeColor})`;
+                    li.innerHTML = `<div class="backdrop-preview" style="background: ${gradient}; border-radius: 8px;"></div><span>${item.name}</span>`;
                 } else { // collection
                     isSelected = state.currentFilters.collections.has(item.name);
                     li.innerHTML = `<img src="https://cdn.changes.tg/gifts/originals/${item.id}/Original.png" alt=""><span>${item.name}</span>`;
                 }
+
                 if (isSelected) li.classList.add('selected');
                 li.addEventListener('click', () => handleModalItemClick(item));
                 elements.modalList.appendChild(li);
@@ -261,7 +281,6 @@
             }
             updateFilterButtons();
             populateModalList(elements.modalSearch.value);
-
             closeModal();
             filterAndRenderModels();
         };
@@ -283,7 +302,6 @@
             populateModalList();
         };
 
-        // Event Listeners
         elements.colorBtn.addEventListener('click', () => openModal('color'));
         elements.backdropBtn.addEventListener('click', () => openModal('backdrop'));
         elements.collectionBtn.addEventListener('click', () => openModal('collection'));
@@ -292,7 +310,6 @@
         elements.modalClearBtn.addEventListener('click', () => { clearModalFilter(); closeModal(); filterAndRenderModels(); });
         elements.modalSearch.addEventListener('input', (e) => populateModalList(e.target.value));
 
-        // --- Initialize App ---
         fetchAllData();
     });
     </script>
