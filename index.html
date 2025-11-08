@@ -21,7 +21,7 @@
             margin: 0; padding: 15px; color: var(--tg-theme-text-color);
             background-color: var(--tg-theme-bg-color); overscroll-behavior: none;
         }
-        .filters-container { display: flex; gap: 10px; margin-bottom: 20px; }
+        .filters-container { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
         .filter-btn {
             padding: 10px 18px; border-radius: 12px; background: var(--glass-bg);
             border: 1px solid var(--border-color); color: var(--tg-theme-text-color);
@@ -29,6 +29,7 @@
             -webkit-backdrop-filter: blur(10px); transition: background-color 0.2s;
             flex-grow: 1; text-align: center;
         }
+        .filter-btn:disabled { cursor: not-allowed; opacity: 0.5; }
         .filter-btn.active {
             background-color: var(--tg-theme-button-color); color: var(--tg-theme-button-text-color);
             border-color: var(--tg-theme-button-color);
@@ -42,12 +43,10 @@
         .model-image-container {
             width: 100%; aspect-ratio: 1 / 1;
             display: flex; justify-content: center; align-items: center;
-            background: transparent;
+            background: transparent; transition: background 0.3s ease;
         }
         .model-image-container img {
-            width: 75%; height: 75%;
-            object-fit: contain;
-            display: block;
+            width: 75%; height: 75%; object-fit: contain; display: block;
             filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.4));
         }
         .model-info { padding: 12px; }
@@ -72,23 +71,17 @@
 <body>
     <div class="app-container">
         <div class="filters-container">
-            <button id="color-filter-btn" class="filter-btn">Color</button>
-            <button id="backdrop-filter-btn" class="filter-btn">Backdrop</button>
-            <button id="collection-filter-btn" class="filter-btn">Collection</button>
+            <button id="color-filter-btn" class="filter-btn" disabled>Color</button>
+            <button id="backdrop-filter-btn" class="filter-btn" disabled>Backdrop</button>
+            <button id="collection-filter-btn" class="filter-btn" disabled>Collection</button>
         </div>
         <div id="model-grid" class="model-grid"></div>
-        <div id="message-container" class="message-container">Select a color to begin...</div>
+        <div id="message-container" class="message-container">Loading all gift data...</div>
     </div>
     
     <div id="filter-modal" class="modal-overlay">
         <div class="modal-content">
-            <div class="modal-header">
-                <h2 id="modal-title">Filter</h2>
-                <div>
-                    <button id="modal-clear-btn" class="clear-btn">Clear all</button>
-                    <button id="modal-close-btn" class="close-btn">Close</button>
-                </div>
-            </div>
+            <div class="modal-header"> <h2 id="modal-title">Filter</h2> <div> <button id="modal-clear-btn" class="clear-btn">Clear all</button> <button id="modal-close-btn" class="close-btn">Close</button> </div> </div>
             <input type="text" id="modal-search" class="modal-search" placeholder="Search...">
             <div id="modal-list" class="modal-list"></div>
         </div>
@@ -99,12 +92,20 @@
         const tg = window.Telegram.WebApp;
         tg.ready(); tg.expand();
 
-        const API_BASE_URL = 'https://colorgifts.onrender.com/api'; // CHANGE THIS
+        // All data will be fetched and stored client-side
+        const appData = {
+            collections: [],
+            backdrops: [],
+            colors: [
+                {name: "white"}, {name: "black"}, {name: "gray"}, {name: "red"},
+                {name: "orange"}, {name: "yellow"}, {name: "green"}, {name: "cyan"},
+                {name: "blue"}, {name: "purple"}, {name: "pink"}, {name: "unknown"}
+            ],
+            colorModelMap: {}
+        };
 
-        let state = {
-            allFiltersData: {},
+        const state = {
             currentFilters: { color: null, backdrop: null, collections: new Set() },
-            currentModels: []
         };
 
         const elements = {
@@ -126,76 +127,98 @@
         const createModelCard = (model) => {
             const card = document.createElement('div');
             card.className = 'model-card';
-            
-            const backdropStyle = state.currentFilters.backdrop
-                ? `radial-gradient(circle, ${state.currentFilters.backdrop.hex.centerColor}, ${state.currentFilters.backdrop.hex.edgeColor})`
-                : 'transparent';
-
+            const backdropStyle = state.currentFilters.backdrop ? `radial-gradient(circle, ${state.currentFilters.backdrop.hex.centerColor}, ${state.currentFilters.backdrop.hex.edgeColor})` : 'transparent';
             card.innerHTML = `
                 <div class="model-image-container" style="background: ${backdropStyle};">
                     <img src="${model.imageUrl}" alt="${model.model}" loading="lazy" onerror="this.style.display='none'">
                 </div>
-                <div class="model-info">
-                    <div class="model-name">${model.model}</div>
-                    <div class="collection-name">${model.collection}</div>
-                </div>
+                <div class="model-info"> <div class="model-name">${model.model}</div> <div class="collection-name">${model.collection}</div> </div>
             `;
             return card;
         };
-        
-        const renderModels = () => {
+
+        const filterAndRenderModels = () => {
             elements.grid.innerHTML = '';
-            const models = state.currentModels;
             if (!state.currentFilters.color) {
                 elements.message.textContent = 'Select a color to begin...';
                 elements.message.style.display = 'block';
                 return;
             }
-            if (models.length === 0) {
+
+            const modelsForColor = appData.colorModelMap[state.currentFilters.color.name] || [];
+            const selectedCollections = state.currentFilters.collections;
+            
+            const filteredModels = selectedCollections.size > 0
+                ? modelsForColor.filter(([collectionName, modelName]) => selectedCollections.has(collectionName))
+                : modelsForColor;
+
+            if (filteredModels.length === 0) {
                 elements.message.textContent = 'No models found for these filters.';
                 elements.message.style.display = 'block';
             } else {
                 elements.message.style.display = 'none';
-                models.forEach(model => elements.grid.appendChild(createModelCard(model)));
+                filteredModels.forEach(([collectionName, modelName]) => {
+                    const encodedCollection = encodeURIComponent(collectionName);
+                    const encodedModel = encodeURIComponent(modelName);
+                    const modelData = {
+                        collection: collectionName,
+                        model: modelName,
+                        imageUrl: `https://cdn.changes.tg/gifts/models/${encodedCollection}/${encodedModel}.png`
+                    };
+                    elements.grid.appendChild(createModelCard(modelData));
+                });
             }
         };
 
-        const fetchAllFilters = async () => {
+        const fetchAllData = async () => {
             try {
-                const response = await fetch(`${API_BASE_URL}/filters`);
-                state.allFiltersData = await response.json();
+                // Fetch collections and backdrops in parallel
+                const [collectionsRes, backdropsRes] = await Promise.all([
+                    fetch("https://cdn.changes.tg/gifts/id-to-name.json"),
+                    fetch("https://cdn.changes.tg/gifts/backdrops.json")
+                ]);
+                const collectionsJson = await collectionsRes.json();
+                appData.collections = Object.entries(collectionsJson).map(([id, name]) => ({ id, name }));
+                appData.backdrops = await backdropsRes.json();
+
+                // Fetch the list of color JSON files from the GitHub repo
+                const repoApiUrl = "https://api.github.com/repos/Vasiliy-katsyka/colorGifts/contents/";
+                const filesRes = await fetch(repoApiUrl);
+                const files = await filesRes.json();
+
+                // Create an array of promises to fetch all JSON files
+                const fileFetchPromises = files
+                    .filter(file => file.name && file.name.endsWith('.json'))
+                    .map(file => fetch(file.download_url).then(res => res.json().then(data => ({ name: file.name, data }))));
+
+                // Wait for all color files to be downloaded and parsed
+                const allColorData = await Promise.all(fileFetchPromises);
+
+                // Process all the downloaded data to build the color map
+                allColorData.forEach(({ name, data }) => {
+                    const giftName = name.replace('.json', '');
+                    for (const [modelName, modelData] of Object.entries(data)) {
+                        let mainColor = "unknown";
+                        if (typeof modelData === 'object' && modelData !== null) mainColor = modelData.main_color || "unknown";
+                        else if (typeof modelData === 'string') mainColor = modelData;
+                        
+                        if (!appData.colorModelMap[mainColor]) appData.colorModelMap[mainColor] = [];
+                        appData.colorModelMap[mainColor].push([giftName, modelName]);
+                    }
+                });
+                
+                // --- Loading Complete ---
+                elements.message.textContent = 'Select a color to begin...';
+                elements.colorBtn.disabled = false;
+                elements.backdropBtn.disabled = false;
+                elements.collectionBtn.disabled = false;
+
             } catch (error) {
-                elements.message.textContent = 'Error loading filters.';
+                console.error("Failed to load initial app data:", error);
+                elements.message.textContent = 'Error: Could not load gift data. Please refresh.';
             }
         };
-
-        const fetchModels = async () => {
-            if (!state.currentFilters.color) {
-                renderModels();
-                return;
-            }
-
-            elements.message.textContent = 'Loading...';
-            elements.message.style.display = 'block';
-            elements.grid.innerHTML = '';
-
-            // --- FIX IS HERE ---
-            // We must use the .name property of the color object
-            const params = new URLSearchParams({ color: state.currentFilters.color.name });
-            
-            if (state.currentFilters.collections.size > 0) {
-                params.append('collections', Array.from(state.currentFilters.collections).join(','));
-            }
-
-            try {
-                const response = await fetch(`${API_BASE_URL}/models?${params.toString()}`);
-                state.currentModels = await response.json();
-                renderModels();
-            } catch (error) {
-                elements.message.textContent = 'Failed to load models.';
-            }
-        };
-
+        
         const openModal = (filterType) => {
             currentModalFilterType = filterType;
             elements.modalTitle.textContent = `Select ${filterType}`;
@@ -206,30 +229,23 @@
 
         const populateModalList = (searchTerm = '') => {
             elements.modalList.innerHTML = '';
-            let items = state.allFiltersData[currentModalFilterType + 's'] || [];
-            if (searchTerm) {
-                items = items.filter(item => item.name.toLowerCase().includes(searchTerm.toLowerCase()));
-            }
+            let items = appData[currentModalFilterType + 's'] || [];
+            if (searchTerm) items = items.filter(item => item.name.toLowerCase().includes(searchTerm.toLowerCase()));
 
             items.forEach(item => {
                 const li = document.createElement('div');
                 li.className = 'modal-item';
-                li.dataset.value = item.name;
-                
                 let isSelected = false;
                 if (currentModalFilterType === 'color' || currentModalFilterType === 'backdrop') {
                     isSelected = state.currentFilters[currentModalFilterType]?.name === item.name;
                     if (currentModalFilterType === 'backdrop') {
                         const gradient = `radial-gradient(circle, ${item.hex.centerColor}, ${item.hex.edgeColor})`;
                         li.innerHTML = `<div class="backdrop-preview" style="background: ${gradient};"></div><span>${item.name}</span>`;
-                    } else {
-                        li.innerHTML = `<span>${item.name.charAt(0).toUpperCase() + item.name.slice(1)}</span>`;
-                    }
+                    } else { li.innerHTML = `<span>${item.name.charAt(0).toUpperCase() + item.name.slice(1)}</span>`; }
                 } else { // collection
                     isSelected = state.currentFilters.collections.has(item.name);
                     li.innerHTML = `<img src="https://cdn.changes.tg/gifts/originals/${item.id}/Original.png" alt=""><span>${item.name}</span>`;
                 }
-                
                 if (isSelected) li.classList.add('selected');
                 li.addEventListener('click', () => handleModalItemClick(item));
                 elements.modalList.appendChild(li);
@@ -239,26 +255,22 @@
         const handleModalItemClick = (item) => {
             if (currentModalFilterType === 'color' || currentModalFilterType === 'backdrop') {
                 state.currentFilters[currentModalFilterType] = state.currentFilters[currentModalFilterType]?.name === item.name ? null : item;
-            } else {
+            } else { // collection
                 const set = state.currentFilters.collections;
                 set.has(item.name) ? set.delete(item.name) : set.add(item.name);
             }
             updateFilterButtons();
             populateModalList(elements.modalSearch.value);
 
-            if (currentModalFilterType === 'color') { closeModal(); fetchModels(); }
-            else if (currentModalFilterType === 'backdrop') { closeModal(); renderModels(); }
+            closeModal();
+            filterAndRenderModels();
         };
         
         const updateFilterButtons = () => {
-            // --- FIX IS HERE ---
-            // We must check if the color object exists before accessing its .name property
             elements.colorBtn.textContent = state.currentFilters.color ? state.currentFilters.color.name : 'Color';
             elements.colorBtn.classList.toggle('active', !!state.currentFilters.color);
-            
             elements.backdropBtn.textContent = state.currentFilters.backdrop ? state.currentFilters.backdrop.name : 'Backdrop';
             elements.backdropBtn.classList.toggle('active', !!state.currentFilters.backdrop);
-
             const collCount = state.currentFilters.collections.size;
             elements.collectionBtn.textContent = collCount > 0 ? `Collection (${collCount})` : 'Collection';
             elements.collectionBtn.classList.toggle('active', collCount > 0);
@@ -271,16 +283,17 @@
             populateModalList();
         };
 
+        // Event Listeners
         elements.colorBtn.addEventListener('click', () => openModal('color'));
         elements.backdropBtn.addEventListener('click', () => openModal('backdrop'));
         elements.collectionBtn.addEventListener('click', () => openModal('collection'));
-        
-        elements.modalCloseBtn.addEventListener('click', () => { closeModal(); if(currentModalFilterType === 'collection') fetchModels(); });
-        elements.modal.addEventListener('click', (e) => { if (e.target === elements.modal) { closeModal(); if(currentModalFilterType === 'collection') fetchModels(); } });
-        elements.modalClearBtn.addEventListener('click', clearModalFilter);
+        elements.modalCloseBtn.addEventListener('click', closeModal);
+        elements.modal.addEventListener('click', (e) => { if (e.target === elements.modal) closeModal(); });
+        elements.modalClearBtn.addEventListener('click', () => { clearModalFilter(); closeModal(); filterAndRenderModels(); });
         elements.modalSearch.addEventListener('input', (e) => populateModalList(e.target.value));
 
-        fetchAllFilters();
+        // --- Initialize App ---
+        fetchAllData();
     });
     </script>
 </body>
